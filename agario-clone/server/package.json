@@ -1,0 +1,19 @@
+{
+  "name": "fress_io_server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "node_server.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "ts-node-dev -r tsconfig-paths/register node_server.ts",
+    "start": "ts-node -r tsconfig-paths/register node_server.ts"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "tsconfig-paths": "^3.12.0"
+  },
+  "dependencies": {
+    "joi": "^17.6.0"
+  }
+}

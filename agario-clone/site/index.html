@@ -1,0 +1,43 @@
+﻿<!DOCTYPE html>
+<html>
+  <head>
+    <title>Fress.io</title>
+    <link href="https://fonts.googleapis.com/css?family=Antic+Slab" rel="stylesheet">
+    <script defer src="./scripts/js_libs/jquery.min.js"></script>
+    <script defer src="./scripts/js_libs/socket.io-client.js"></script>
+    <script defer type="module" src="./scripts/game_test.js"></script>
+    <!-- <script defer data-main="scripts/build/fress_io.js" src="scripts/js_libs/require.js"></script> -->
+    <link rel="stylesheet" href="./css/style.css">
+  </head>
+
+  <body style="background-color: #424242">
+    <div id="menu">
+      <div id="menu_background"></div>
+      <div id="menu_container">
+        <div id="inputs">
+          <img id="menu_logo" />
+          <div id="nickname_container">
+            <input id="set_name" type="text" value="" placeholder="Nick"></input>
+            <p id="nickname_error">Nickname length must be from 3 to 20 characters.</p>
+          </div>
+          <button id="start_game" class="b btn waves-effect waves-light grey darken-4">Play</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="leaderboard">
+      <p id="l_text">Leaderboard</p>
+      <ol id="l_players"></ol>
+    </div>
+
+    <div id="score_container">
+      <p id="score">Score: 10</p>
+    </div>
+
+    <p id="fps"></p>
+    <p id="server_indicator">Disconnected</p>
+    <p id="room_info"></p>
+    <p id="author"><a href="https://github.com/yaroslav-andriyovich" target="_blank">GitHub</a></p>
+
+  </body>
+</html>

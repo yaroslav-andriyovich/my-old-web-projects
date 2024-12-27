@@ -1,0 +1,749 @@
+/** Настройки сервера */
+const Config = new function()
+{
+    /** Домен для подключения */
+    this.domain = "http://agar";
+    /** Порт для прослушивания */
+    this.port = 777;
+    /** Имя комнаты, по которому подключается сокет */
+    this.room_name = "fress.io";
+    /** Массив цветов (RGB), которые используются для окраски игроков и еды */
+    this.colors = [
+        [255, 43, 43],
+        [255, 43, 192],
+        [230, 43, 255],
+        [156, 43, 255],
+        [65, 43, 255],
+        [43, 135, 255],
+        [43, 241, 255],
+        [43, 255, 163],
+        [43, 255, 75],
+        [167, 255, 43],
+        [255, 244, 43],
+        [255, 149, 43],
+        [255, 100, 43]
+    ];
+    /** Количество плиток карты */
+    this.tile_count = 1;
+    /** Размер плитки карты */
+    this.tile_size = 1250;
+    /** Общий размер карты */
+    this.map_size = this.tile_count * this.tile_size;
+    /** Максимальное количество объектов еды на карте */
+    this.max_food_points_count = 40 * this.tile_count;
+    /** Минимальная дистанция от края карты */
+    this.min_edge_distance = 35;
+    /** Минимальный размер объекта еды */
+    this.min_food_point_radius = 5;
+    /** Максимальный размер объекта еды */
+    this.max_food_point_radius = 10;
+    /** Минимальный размер игрока */
+    this.min_player_radius = 20;
+    /** Максимальный размер игрока */
+    this.max_player_radius = +((this.map_size / 4).toFixed(0));
+    /** Множитель увеличения размера игрока */
+    // this.player_scale_value = 0.3;
+    this.player_scale_value = 1;
+    /** Начальное значение очков игрока */
+    this.player_start_score = 10;
+};
+
+/* Инициализация сервисов */
+const app = require('express')();
+const httpServer = require('http').Server(app);
+const io = require('socket.io')(httpServer,
+{
+    cors: {
+        origin: Config.domain,
+        methods: ["GET", "POST"],
+        allowedHeaders: ["my-custom-header"],
+        credentials: true
+    },
+    pingTimeout: 20000
+});
+
+/** Сгенерировать новый ID */
+function GenerateID() 
+{
+    let result       = '';
+    let words        = '0123456789qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM';
+    let max_position = words.length - 1;
+
+    for(let i = 0; i <= 10; ++i ) 
+    {
+        let position = Math.floor ( Math.random() * max_position );
+        result = result + words.substring(position, position + 1);
+    }
+
+    return result;
+}
+
+/** 
+    Отфильтровать никнейм убрав все HTML символы
+    @param {string} [text] Текст для проверки
+    @returns {string} Nickname
+*/
+function NicknameFilter(nickname) 
+{
+    if (!nickname)
+    {
+        return;
+    }
+
+    let map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+
+    return nickname.replace(/[&<>"']/g, function(m) { return map[m]; });
+}
+
+/** 
+    Сгенерировать случайное значение
+    @param {number} [min] Минимальное число
+    @param {number} [max] Максимальное число
+*/
+function Random(min, max) 
+{
+    return Math.round(Math.random() * (max - min) + min);
+}
+
+/** Сгенерировать случайное число для точки спавна на карте */
+function RandomSpawnPoint()
+{
+    return Random(Config.min_edge_distance, Config.map_size - Config.min_edge_distance);
+}
+
+function GetRGB(colors_arr, is_dark = false)
+{
+    if (!is_dark)
+    {
+        return `rgb(${colors_arr[0]}, ${colors_arr[1]}, ${colors_arr[2]})`;
+    }
+
+    let num = 20;
+    return `rgb(${colors_arr[0] - num}, ${colors_arr[1] - num}, ${colors_arr[2] - num})`;
+} 
+
+/** Сгенерировать случайное число для точки спавна на карте */
+function RandomColor()
+{
+    return Config.colors[Random(0, Config.colors.length - 1)];
+}
+
+/** Прототип объекта еды */
+class FoodPoint
+{
+    /** 
+        Создать новый объект еды
+        @param {string} [id] ID  для новой еды
+    */
+    constructor(id)
+    {
+        this.id = id;
+        this.x = RandomSpawnPoint(); 
+        this.y = RandomSpawnPoint();
+        this.radius = Random(Config.min_food_point_radius,  Config.max_food_point_radius);
+        this.fillColor = GetRGB(RandomColor());
+    }
+}
+
+/** Объект управления едой */
+const FoodPoints = new class
+{
+    /** Коллекция объектов еды */
+    #food_points = new Map();
+
+    /** Создать новый объект для управления едой */
+    constructor ()
+    {
+        // Сгенерировать еду при инициализации
+        this.Generate();
+    }
+
+    /** Сгенерировать еду */
+    Generate ()
+    {
+        let count = Config.max_food_points_count - this.Count;
+        let newFoods = new Map();
+
+        // Цикл для создания новой еды
+        for (let i = 0; i < count; i++) 
+        {
+            let newFood = new FoodPoint(GenerateID());
+    
+            // Добавить новый объект еды в общую коллекцию
+            this.#food_points.set(newFood.id, newFood);
+            // Добавить новый объект еды в коллекцию для отправки
+            newFoods.set(newFood.id, newFood);
+        }
+
+        return Array.from(newFoods);
+    }
+
+    /** Преобразованная коллекция объектов еды для отправки клиентам */
+    get ListToSend()
+    {
+        return Array.from(this.#food_points);
+    }
+
+    /** Кол-во объектов еды в коллекции */
+    get Count()
+    {
+        return this.#food_points.size;
+    }
+
+    /** Получить объект еды по ID */
+    GetOne (id)
+    {
+        return this.#food_points.get(id);
+    }
+
+    /** 
+        Удалить объект еды из коллекции
+        @param {string} [id] ID объекта
+    */
+    Remove (removedFood)
+    {
+        let removedCount = 0;
+
+        for (let i in removedFood)
+        {
+            if (!this.GetOne(removedFood[i]))
+            {
+                continue;
+            }
+
+            this.#food_points.delete(removedFood[i]);
+            removedCount++;
+        }
+
+        return removedCount;
+    }
+};
+
+/** Прототип объекта игрока */
+const ServerPlayer = class
+{
+    /** Имя игрока @type {string} */
+    #name;
+    /** Цет игрока @type {string} */
+    #fillColor;
+    #strokeColor;
+    #strokeWidth = 4;
+    /** ID игрока @type {string} */
+    #id;
+    /** X координата игрока @type {number} */
+    #x;
+    /** Y координата игрока @type {number} */
+    #y;
+    /** Радиус игрока @type {number} */
+    #radius;
+    /** Очки игрока @type {number} */
+    #score;
+    /** Скорость игрока @type {number} */
+    #speed = 3.5;
+    /** Новая позиция игрока 
+     * @type {object} 
+     * @property {number} x Координата
+     * @property {number} y Координата
+    */
+    #pos;
+    /** Состояние жизни игрока @type {boolean} */
+    #alive = false;
+    #socket;
+
+    /** Режим рассылки сообщений от сервера @type {object}*/
+    #RPC_Mode = {
+        /** Отправить сообщения только локальному игроку */
+        ToLocal: "rpc_to_local",
+    
+        /** Отправить сообщения всем клиентам */
+        ToAll: "rpc_to_all",
+
+        /** Отправить сообщения всем клиентам кроме локального */
+        ToAllExceptLocal: "rpc_to_all_except_local"
+    };
+    
+    /** Создать пустой объект игрока 
+     * @param {Socket} socket
+    */
+
+    /** Создать новый объект игрока
+     * @param {string} nickname Имя игрока
+    */
+    constructor (socket)
+    {
+        this.#socket = socket;
+        this.#id = socket.client.id;
+    }
+
+    /** ID игрока @type {string} */
+    get Id ()
+    {
+        return this.#id;
+    }
+
+    /** ID игрока @type {string} */
+    get Score ()
+    {
+        return this.#score;
+    }
+
+    /** Радиус игрока @type {string} */
+    get Radius ()
+    {
+        return this.#radius;
+    }
+
+    get Alive ()
+    {
+        return this.#alive;
+    }
+
+    /** Достиг ли игрок максимальных размеров @type {boolean} */
+    get IsRadiusPeaked ()
+    {
+        return this.#radius >= Config.max_player_radius;
+    }
+
+    /** Достиг ли игрок максимальных размеров @type {boolean} */
+    get ToRender ()
+    {
+        return {
+            name: this.#name,
+            fillColor: this.#fillColor,
+            strokeColor: this.#strokeColor,
+            strokeWidth: this.#strokeWidth,
+            id: this.#id,
+            x: this.#x,
+            y: this.#y,
+            pos: this.#pos,
+            radius: this.#radius,
+            score: this.#score,
+            speed: this.#speed,
+            alive: this.#alive
+        };
+    }
+
+    /** Обновить позицию
+     * @param {object} [data] Данные
+    */
+    UpdatePosition (data)
+    {
+        // Если игрок мёртв
+        if (!this.#alive)
+        {
+            // Не обновлять его позицию
+            return;
+        }
+
+        this.#pos = data.pos; 
+        this.#x   = data.x; 
+        this.#y   = data.y;
+
+        this.RPC_UpdatePlayerPosition(data);
+    }
+
+    /** Обновить радиус
+     * @param {number} value Задать значение
+    */
+    UpdateRadius (value, set = false)
+    {
+        // Если значение не указано
+        if (!set)
+        {
+            // Увеличиваем радиус на значение по умолчанию
+            this.#radius += (Config.player_scale_value * value);
+            return;
+        }
+    
+        this.#radius = value;
+    }
+
+    /** Обновить кол-во очков
+     * @param {boolean} is_sum Нужно прибавать единицу
+     * @param {number} value Задать значение
+    */
+    UpdateScore (value)
+    {
+        this.#score += value;
+    }
+
+    /** Может ли игрок скушать еду
+     * @returns {bollean}
+    */
+    AteFood (removedFood)
+    {
+        // Отмена операции, если радиус достиг макситума
+        if (this.IsRadiusPeaked)
+        {
+            return false;
+        }
+        
+        let removedCount = FoodPoints.Remove(removedFood);
+
+        // Отмена операции, если не удалено ни одного объекта
+        if (!removedCount)    
+        {
+            return false;
+        }
+
+        this.UpdateRadius(removedCount);
+        this.UpdateScore(removedCount);
+
+        return removedCount;
+    }
+
+    Die ()
+    {
+        this.#alive       = false;
+        this.#name        = "";
+        this.#fillColor   = "";
+        this.#strokeColor = "";
+        this.#x           = 0;
+        this.#y           = 0;
+        this.#pos.x       = 0;
+        this.#pos.y       = 0;
+        this.#radius      = 0;
+        this.#score       = 0;
+    }
+
+    /** Метод отправки сообщений клиентам
+     * @param {string} rpc_mode Режим рассылки сообщений от сервера
+     * @param {string} rpc_name Имя команды
+     * @param {object} data Данные
+    */
+    #RPC (rpc_mode, rpc_name, data)
+    {
+        switch (rpc_mode)
+        {
+            case this.#RPC_Mode.ToLocal:
+                this.#socket.emit(rpc_name, data);
+                break;
+            case this.#RPC_Mode.ToAll:
+                io.in(Config.room_name).emit(rpc_name, data);
+                break;
+            case this.#RPC_Mode.ToAllExceptLocal:
+                this.#socket.to(Config.room_name).emit(rpc_name, data);
+                break;
+            default:
+                console.error("Unknown RPC mode.");
+                break;
+        }
+    }
+
+    /** Отправить "pong" клиенту */
+    RPC_Pong ()
+    {
+        // this.#RPC(this.#RPC_Mode.ToLocal, 'pong', new Date().getTime());
+        this.#socket.emit('pong', new Date().getTime());
+    }
+
+    /** Отправить "pong" клиенту */
+    Spawn (data)
+    {
+        // Если игрок жив
+        if (this.#alive)
+        {
+            // Отменить спавн
+            return;
+        }
+
+        this.#name        = NicknameFilter(data.name);
+        let color         = RandomColor();
+        this.#fillColor   = GetRGB(color);
+        this.#strokeColor = GetRGB(color, true);
+        this.#x           = RandomSpawnPoint();
+        this.#y           = RandomSpawnPoint();
+        this.#pos         = { x: this.x, y: this.y };
+        this.#radius      = Config.min_player_radius;
+        this.#score       = Config.player_start_score;
+        this.#alive       = true;
+
+        this.RPC_NewPlayer();
+    }
+
+    /** Заспавнить локального игрока на карте (у всех) */
+    RPC_NewPlayer ()
+    {
+        this.#RPC(this.#RPC_Mode.ToAll, 'new_player', this.ToRender);
+    }
+
+    /** Обновить позицию врага */
+    RPC_UpdatePlayerPosition (data)
+    {
+        // Добавить к данным: айди игрока, которому нужно обновить позицию
+        data.id = this.#id;
+
+        this.#RPC(this.#RPC_Mode.ToAllExceptLocal, 'update_enemy_pos', data);
+    }
+
+    /** Игрок скушал объекты еды */
+    RPC_AteFood (removedFood)
+    {
+        let res = {
+            player: {},
+            removedFood: []
+        };
+
+        if (!this.AteFood(removedFood))
+        {
+            res.player = {
+                id: this.#id,
+                radius: this.#radius,
+                score: this.#score
+            }
+
+            this.#RPC(this.#RPC_Mode.ToLocal, 'someone_ate_food', res);
+            return;
+        }
+
+        res.player = {
+            id: this.#id,
+            radius: this.#radius,
+            score: this.#score
+        };
+        res.removedFood = removedFood;
+
+        this.#RPC(this.#RPC_Mode.ToAll, 'someone_ate_food', res);
+        this.RPC_AddNewFoodPoints();
+    }
+
+    /** Локальный игрок скушал другого игрока
+     * @param {object} data Данные
+    */
+    RPC_AteEnemy (data)
+    {
+        // Получить объект врага из коллекции
+        let enemy = Server.GetPlayer(data.enemy);
+
+        // Отмена операции, если вражеский игрок не найден
+        if (enemy)
+        {
+            // Обновить кол-во очков
+            this.UpdateScore(enemy.Score);
+
+            // Значение нового радиуса
+            let new_radius = this.#radius + (enemy.Score / 2);
+
+            // Если новый радиус больше чем максимальный радиус
+            if (new_radius >= Config.max_player_radius)
+            {
+                // Задать максимальный радиус
+                this.UpdateRadius(Config.max_player_radius, true);
+            }
+            else
+            {
+                // Увеличить радиус при поглощении врага
+                this.UpdateRadius(new_radius, true);
+            }
+
+            enemy.Die();
+
+            // Добавить в данные ID убийцы
+            data.killer = { id: this.#id, radius: this.#radius, score: this.#score };
+
+            this.#RPC(this.#RPC_Mode.ToAll, 'someone_ate_enemy', data);
+
+            return;
+        }
+
+        // Добавить в данные ID убийцы
+        data.killer = { id: null, radius: this.#radius, score: this.#score };
+
+        this.#RPC(this.#RPC_Mode.ToLocal, 'someone_ate_enemy', data);
+    }
+
+    /** Добавить новые объекты еды на карту */
+    RPC_AddNewFoodPoints ()
+    {
+        // Не генерировать новый объект еды, если их много на карте
+        if (FoodPoints.Count >= Config.max_food_points_count)
+        {
+            console.log("Food points max on the map!");
+            console.log(FoodPoints.Count);
+            return;
+        }
+
+        this.#RPC(this.#RPC_Mode.ToAll, 'generate_new_foods', FoodPoints.Generate());
+    }
+};
+
+/** 
+    @typedef {import('socket.io').Server} def_socket Сокет
+    *
+    @typedef {Object} edited_socket Сокет клиента
+    @property {ServerPlayer} player Объект игрока как свойство сокета
+    *
+    @typedef {def_socket & edited_socket} Socket Сокет клиента
+*/
+
+/** Серверная логика */
+const Server = new class
+{
+    /** Коллекция всех ЖИВЫХ игроков на карте @type {ServerPlayer}*/
+    #players = new Map();
+
+    /** 
+        Заспавнить игрока на карте
+        @param {Socket} socket
+    */
+    AddPlayer (socket)
+    {
+        // Если такой игрок уже существует
+        if (this.GetPlayer(socket.client.id))
+        {
+            // Не добавлять его в коллекцию
+            return;
+        }
+
+        /** @type {ServerPlayer} */
+        let newPlayer = new ServerPlayer(socket);
+
+        // Внести нового игрока в коллекцию
+        this.#players.set(newPlayer.Id, newPlayer);
+
+        return newPlayer;
+    }
+
+    /** 
+        Удалить игрока из общего списка
+        @param {string} id ID игрока
+    */
+    RemovePlayer (id)
+    {
+        this.#players.delete(id);
+    }
+
+    /** 
+        Получить объект игрока из спика
+        @param {string} id ID игрока
+        @returns {ServerPlayer}
+    */
+    GetPlayer (id)
+    {
+        return this.#players.get(id);
+    }
+
+    /** Преобразованная коллекция всех игроков для отправки клиенту */
+    GetAllEnemies (player_id)
+    {
+        let new_map = new Map();
+
+        // Добавить в новую коллекцию все объекты игроков для рендера кроме локального игрока
+        this.#players.forEach((value) =>
+        {
+            if (value.Alive && value.Id !== player_id)
+            {
+                new_map.set(value.Id, value.ToRender);
+            }
+        });
+
+        return JSON.stringify(Array.from(new_map));
+    }
+
+    /** 
+        @returns {number} Возвращает количество подключённых клиентов 
+    */
+    get Online ()
+    {
+        // Получить игровую комнату
+        let room = io.sockets.adapter.rooms.get(Config.room_name);
+        
+        // Возвращаем количество подключённых игроков
+        return (!room) ? 0 : room.size;
+    }
+
+    /** Обновить онлайн */
+    UpdateOnline ()
+    {
+        io.in(Config.room_name).emit('update_online', this.Online);
+    }
+
+    /** Сообщить всем об отключении локального игрока 
+     * @param {Socket} socket
+    */
+    InitializePlayer (socket)
+    {   
+        // Подключить сокет игрока к глобальной игровой комнате
+        socket.join(Config.room_name);
+
+        let newPlayer = this.AddPlayer(socket);
+
+        // Данные для клиента
+        let data = 
+        { 
+            map: 
+            {
+                map_size: Config.map_size,
+                map_min_edge: Config.min_edge_distance,
+                tile_size: Config.tile_size,
+                tile_count: Config.tile_count,
+                foodPoints: FoodPoints.ListToSend,
+            },
+            enemies: this.GetAllEnemies(newPlayer.Id),
+            local_id: newPlayer.Id,
+            server_settings: 
+            {
+                player_scale_value: Config.player_scale_value,
+                min_player_radius: Config.min_player_radius,
+                max_player_radius: Config.max_player_radius
+            }
+        };
+
+        socket.emit('map_init', data);
+        this.UpdateOnline();
+
+        return newPlayer;
+    }
+
+    /** Сообщить всем об отключении локального игрока 
+     * @param {Socket} socket
+    */
+    OnPlayerDisconnected (socket)
+    {
+        this.RemovePlayer(socket.client.id);
+
+        io.in(Config.room_name).emit('player_disconnected', 
+            {
+                id: socket.client.id,
+                online: this.Online
+            }
+        );
+    }
+};
+
+/* [Обработчик событий] Клиент подключился */
+io.on('connection', function(/** @type {Socket} */socket) 
+{
+    /** Ссылка на объект текущего игрока */
+    let player = Server.InitializePlayer(socket);
+
+    // Обработка команд клиента
+    
+    // Игрок готов к спавну
+    socket.on('ready_to_spawn', (data) => player.Spawn(data.name));
+
+    // Пинг
+    socket.on('ping', () => player.RPC_Pong());
+
+    // Обновить и отправить позицию игрока
+    socket.on('update_pos', (data) => player.UpdatePosition(data));
+
+    // Игрок скушал объект еды
+    socket.on('ate_food', (data) => player.RPC_AteFood(data));
+
+    // Локальный игрок скушал другого игрока
+    socket.on('ate_enemy', (data) => player.RPC_AteEnemy(data));
+
+    // Игрок отключился
+    socket.on('disconnect', () => Server.OnPlayerDisconnected(socket));
+});
+
+httpServer.listen(Config.port);
+console.clear();
+console.log("Server was started.");

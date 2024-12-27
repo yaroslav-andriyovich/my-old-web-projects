@@ -1,0 +1,1574 @@
+"use strict";
+
+// $(document).ready(function() { 
+    /** 
+        @typedef { import('./engine').PointJS } PointJS
+    */
+    const Engine = new PointJS(0, 0, { backgroundColor: "rgb(233, 233, 233)" });
+    /** Объект движка для управления системными настройками */
+    const System = Engine.system;
+    /** Объект движка для управления игровыми настройками */
+    const Game   = Engine.game;
+    /** Метод движка для получения размертов игровой сцены */
+    const GetWH  = Game.getWH;
+    /** Объект камеры в движке */
+    const Camera = Engine.camera;
+    /** Объект движка для взаимодействия с мышкой */
+    const MouseControl = Engine.mouseControl;
+    /** Метод для получения координат курсора мышки */
+    const MousePosition = MouseControl.getPosition;
+    /** Объект движка для взаимодействия с клавиатурой */
+    const KeyControl   = Engine.keyControl;
+    /** Метод движка для создания точки в 2D пространстве */
+    const VectorPoint  = Engine.vector.point;    
+    /** Метод движка для создания аудио объекта */
+    const WAudio  = Engine.wAudio.newAudio;
+
+    /** Аудио помощник */
+    const AudioManager = new class
+    {
+        /** Звук поглощения врага */
+        #die = WAudio("sounds/vsos.wav", 0.2);
+
+        /** Возпроизвести звук поглощения врага */
+        PlayDie ()
+        {
+            this.#die.play();
+        }
+    };
+
+    /** Получить значение от числа по проценту
+     * @param {number} [percent] Значение процента
+     * @param {number} [number] Число, от которого нужно получить процент 
+    */
+    function GetPercentage(percent, number)
+    {
+        return number * (percent / 100);
+    } 
+
+    /** Получить строку цвета
+     * @param {Array} colors_arr Массив цифр для создания цвета
+     * @param {boolean} is_dark True, если нужно получить тёмную версию цвета
+    */
+    function GetRGB(colors_arr, is_dark = false)
+    {
+        if (!is_dark)
+        {
+            return `rgb(${colors_arr[0]}, ${colors_arr[1]}, ${colors_arr[2]})`;
+        }
+
+        let num = 20;
+        return `rgb(${colors_arr[0] - num}, ${colors_arr[1] - num}, ${colors_arr[2] - num})`;
+    } 
+
+    /** Объкт для взаимодействия с меню */
+    const Menu = new class
+    {
+        /** Панель меню */
+        #panel = $("#menu");
+        /** Фон меню */
+        #panel_bg = $("#menu_background");
+        /** Поле ввода никнейма */
+        #name_field = $("#set_name");
+        /** Текст для вывода ошибки */
+        #name_field_error = $("#nickname_error");
+        /** Кнопка начала игры */
+        #start_game_button = $("#start_game");
+        /** Контейнер для вя вывода очков */
+        #score_container = $("#score_container");
+        /** Текстовый элемент для вя вывода очков */
+        #score = $("#score");
+        /** Введённый никнейм */
+        #entered_nickname = "";
+
+        /** Создать объкт для взаимодействия с меню */
+        constructor ()
+        {
+            // Добавить обработчик нажатий на кнопку начала игры
+            this.#start_game_button.click(() => this.#OnStartGameButton());
+        }
+
+        /** Показать панель меню */
+        Show (show_with_background = false)
+        {
+            this.#panel.fadeIn(150);
+
+            // Скрыть кол-во очков
+            this.#score_container.hide();
+
+            // Отключить обработку движком нажатий клавы
+            KeyControl.exitKeyControl();
+            // Отключить обработку движком нажатий мыши
+            MouseControl.exitMouseControl();
+
+            if (show_with_background)
+                this.#panel_bg.show();
+            else
+                this.#panel_bg.hide();
+        }
+
+        /** Скрыть панель меню */
+        Hide (hide_with_background = false)
+        {
+            this.#panel.fadeOut(150);
+
+            // Показать кол-во очков
+            this.#score_container.show();
+
+            // Включить обработку движком нажатий клавы
+            KeyControl.initControl();
+            // Отключить обработку движком нажатий мыши
+            MouseControl.initMouseControl();
+
+            if (hide_with_background)
+                this.#panel_bg.hide();
+        }
+
+        /** Обновить текст кол-ва очков */
+        UpdateScore (value)
+        {
+            this.#score.text(`Score: ${value}`);
+        }
+
+        /** 
+            Проверить никнейм на ошибки
+            @returns {boolean}
+        */
+        #ValidateNickname ()
+        {
+            // Получить значение из поля ввода
+            let name = this.#name_field.val();
+            // Убрать лишние пробелы
+            name = name.replace(/\s/g, ' ');
+            
+            // Если поле никнейма пустое
+            if (!name)
+            {
+                console.warn("Name has not been entered.");
+                // Задаём имя по умолчанию
+                name = "Player";
+            }
+            // Вывести ошибку, если игрок ввёл некорректный ник
+            else if (name.length < 3 || name.length > 20)
+            {
+                // Вывести ошибку
+                this.#name_field_error.show();
+                return true;
+            }
+    
+            // Скрыть ошибки
+            this.#name_field_error.hide();
+            // Задать значение никнейма
+            this.#entered_nickname = name;
+        }
+
+        /** Была нажата кнопка начала игры */
+        #OnStartGameButton ()
+        {
+            // Если игрок не подключён к серверу
+            if(!Server.ConnectionState) 
+            {
+                // Сообщить об ошибке подключения    
+                alert("Server connection error.");
+                // Прекратить процедуру спавна
+                return;
+            }
+
+            // Если никнейм не корректный
+            if (this.#ValidateNickname())
+            {
+                // Прекратить процедуру спавна
+                return;
+            }
+
+            // Клиент готов к спавну
+            Server.RPC_ReadyToSpawn(this.#entered_nickname);
+        }
+    };
+
+    /** Объект для связи с сервером */
+    const Server = new class
+    {
+        /** Порт для подключения к серверу */
+        #port = 777;
+
+        /** Задержка для отправки определённых команд серверу */
+        get #Ping () 
+        {
+            return 100;
+        }
+
+        /** Объект сокета + подключение к серверу */
+        #socket = io.connect(":" + this.#port);
+
+        /** HTML Элемент для отображения статуса подключения к серверу */
+        #state_indicator = $("#server_indicator");
+        /** HTML Элемент для отображения онлайна*/
+        #room_info = $("#room_info");
+
+        /** Время крайнего пинга сервера */
+        #last_ping = new Date().getTime();
+
+        /** Время крайнего ответа от сервера */
+        #last_pong = {
+            to_server: 0,
+            back: 0
+        };
+
+        /** Цикл для получения пинга */
+        #ping_interval;
+
+        /** Время крайнего обновления позиции */
+        #last_pos_update = new Date().getTime();
+
+        /** 
+            Получить состояние подключения к серверу 
+            @returns true / false
+        */
+        get ConnectionState ()
+        {
+            return this.#socket.connected;
+        };
+
+        /** Получить время пинга сервера */
+        get Ping ()
+        {
+            return `Ping: &#11014; ${this.#last_pong.to_server} | &#11015; ${this.#last_pong.back}`;
+        };
+
+        /** 
+            Обновить информацию о подключении к серверу 
+            @param {string} [reason] Причина изменения состояния (для вывода в консоль)
+        */
+        #UpdateConnectionState (reason = undefined)
+        {
+            // Успешное подключение
+            if (this.ConnectionState)
+            {
+                console.log("Server connection established.");
+                // Обновить текст индикатора
+                this.#state_indicator.text("Connected").css("color", "#00ff37");
+                this.#StartPing();
+                return;
+            }
+
+            console.error((!reason) ? "Disconnected." : reason);
+            // Отобразить меню
+            Menu.Show(true);
+            // Обновить текст индикатора
+            this.#state_indicator.text("Disconnected").css("color", "#ff0000");
+            // Обновить текст онлайна
+            this.#room_info.text("");
+            // Очистить игровые данные
+            GameManager.Clear();
+            GameManager.ClearServerID();
+            // Остановить процесс получения пинга
+            this.#StopPing();
+        };
+
+        /** Запустить процесс получения пинга */
+        #StartPing ()
+        {
+            this.#StopPing();
+
+            this.#ping_interval = setInterval(() =>
+            {
+                this.#last_ping = new Date().getTime();
+                this.#RPC("ping");
+            }, 3000);
+        };
+
+        /** Остановить процесс получения пинга */
+        #StopPing ()
+        {
+            clearInterval(this.#ping_interval);
+            this.#last_pong.to_server = "-";
+            this.#last_pong.back = "-";
+        };
+
+        /** 
+            Обновить текст элемента отображающего онлайн
+            @param {string | number} [online] Число игроков в онлайне
+        */
+        UpdateOnline (online)
+        {
+            this.#room_info.text(`Current online: ${online}`);
+        };
+
+        /** 
+            Remote Procedure Call (отправка сообщений серверу)
+            @param {string} [rpc_name] Команда для сервера
+            @param {object} [data] Данные
+        */
+        #RPC (rpc_name, data)
+        {
+            // Если отсутствует подключение к серверу
+            if (!this.ConnectionState)
+            {
+                // Не отправлять сообщение
+                return console.error("[RPC] Connection error.");
+            }
+
+            // Отправить сообщение с параметрами серверу
+            this.#socket.emit(rpc_name, data);
+        };
+
+        /**
+            @summary Сообщить серверу
+            @summary Игрок готов к спавну
+            @param {object} [data] Имя игрока
+        */
+        RPC_ReadyToSpawn (player_name)
+        {
+            this.#RPC("ready_to_spawn", { name: player_name });
+        };
+
+        /**
+            @summary Сообщить серверу
+            @summary Обновить позицию локального игрока
+            @param {object} [data] Новые координаты
+        */
+        RPC_UpdatePOS (data)
+        {   
+            // Текущее время
+            let current_time = new Date().getTime();
+
+            // Если разница во времени крайнего обновления позиции игрока
+            // больше, чем время задержки между отправкой команды
+            if ((current_time - this.#last_pos_update) > this.#Ping)
+            {
+                // Обновить крайнее время смены позиции
+                this.#last_pos_update = current_time;
+                this.#RPC("update_pos", data);
+            } 
+        };
+
+        /**
+            @summary Сообщить серверу
+            @summary Локальный игрок скушал объект еды
+            @param {string} [food_id] ID объекта еды для удаления
+        */
+        RPC_AteFood (food_id)
+        {
+            this.#RPC("ate_food", food_id);
+        };
+
+        /**
+            @summary Сообщить серверу
+            @summary Локальный игрок скушал другого игрока
+            @param {string} [enemy_id] ID врага
+        */
+        RPC_AteEnemy (enemy_id)
+        {
+            this.#RPC("ate_enemy", { enemy: enemy_id });
+        };
+
+        /** Создать объект для Связи с сервером */
+        constructor ()
+        {
+            /* Запустить обработчики событий при инициализации */
+
+            // Клиент подключился к серверу
+            this.#socket.on('connect', () => 
+            {
+                this.#UpdateConnectionState();
+            });
+        
+            // Ошибка переподключения к серверу
+            this.#socket.io.on('reconnect_error', (error) => 
+            {
+                this.#UpdateConnectionState("The server is down.");
+            });
+        
+            // Клиент отключился от сервера
+            this.#socket.on('disconnect', (reason) => 
+            {
+                let my_reason = reason;
+
+                if (reason === 'io server disconnect') 
+                {
+                    my_reason = "You were kicked from the server.";
+                } 
+                else if (reason === "transport close") 
+                {
+                    my_reason = "Server connection has been lost.";
+                }
+
+                this.#UpdateConnectionState(my_reason);
+            });
+
+            this.#socket.on('pong', (time) => 
+            {
+                this.#last_pong.to_server = time - this.#last_ping;
+                this.#last_pong.back = new Date().getTime() - this.#last_ping;
+            });
+
+            // Инициализировать карту и игроков при подключении к серверу
+            this.#socket.on('map_init', (res) => 
+            {
+                GameManager.OnMapInit(res);
+            });
+
+            // Обновить онлайн
+            this.#socket.on('update_online', (online) => 
+            {
+                Server.UpdateOnline(online);
+            });
+
+            // Заспавнить нового игрока
+            this.#socket.on('new_player', function(new_player) 
+            {
+                GameManager.OnNewPlayer(new_player);
+            });
+
+            // Игрок отключился
+            this.#socket.on('player_disconnected', function(res) 
+            {
+                GameManager.OnPlayerDisconnected(res);
+            });
+
+            // Обновить позицию врага
+            this.#socket.on('update_enemy_pos', function(player) 
+            {
+                GameManager.OnUpdateEnemyPos(player);
+            });
+
+            // Кто-то скушал еду
+            this.#socket.on('someone_ate_food', function(data)
+            {
+                GameManager.OnPlayerAteFood(data);
+            });
+
+            // Кто-то скушал врага
+            this.#socket.on('someone_ate_enemy', function(data)
+            {
+                GameManager.OnPlayerAteEnemy(data);
+            });
+
+            // Новый объект еды
+            this.#socket.on('add_one_food_point', function(data) 
+            {
+                MapManager.AddOneFoodPoint(data);
+            });
+        }
+    };
+
+    /** Объект для управления картой */
+    const MapManager = new class
+    {
+        /** Размер карты */
+        #map_size = 0;
+        /** Минимальная дистанция от границ карты */
+        #map_min_edge = 0;
+        /** Размер плитки */
+        #tile_size = 0;
+        /** Количество плиток */
+        #tile_count = 0;
+
+        /** Коллекция объектов еды */
+        #food_points = new Map();
+        /** Массив плиток */
+        #tiles = new Array();
+
+        /** Массив игровых объектов, которые нужно отрисовывать на сцене */
+        #game_objects_for_rendering = new Array();
+
+        /** Получить размер карты */
+        get MapSize ()
+        {
+            return this.#map_size;
+        };
+
+        /** Получить объекты еды */
+        get FoodPoints ()
+        {
+            return this.#food_points.values();
+        };
+
+        /** Удалить объект еды */
+        RemoveOneFoodPoint (id)
+        {
+            this.#food_points.delete(id);
+        };
+
+        /** Очистить карту */
+        Clear ()
+        {
+            this.#food_points.clear();
+            this.#tiles = [];
+        };
+
+        /** Создать объект плитки */
+        #CreateTile (params)
+        {
+            return Game.newImageObject({ 
+                file: `images/tile.png`, 
+                w: this.#tile_size, 
+                h: this.#tile_size,
+                x: params.x,
+                y: params.y,
+                alpha: 1
+            });
+        };
+
+        /** Создать объект плитки за границей карты */
+        #CreateBorderTile (params)
+        {
+            let border_tile = this.#CreateTile(params);
+            border_tile.alpha = 0.4;
+
+            return border_tile;
+        };
+
+        /** Создать новый объект еды */
+        #NewFoodPoint (params)
+        {
+            let new_food = Game.newCircleObject({ 
+                alpha: 0,
+                radius: params.radius,
+                x: params.x,
+                y: params.y,
+                fillColor: GetRGB(params.color)
+            });
+            
+            new_food.server_id = params.id;
+
+            return new_food;
+        }
+
+        /** Создать плитки карты */
+        #GenerateTiles ()
+        {
+            /* Создать плитки по оси X */
+            for (let x = -1; x <= this.#tile_count; x++) 
+            {
+                /* Создать плитки по оси Y */
+                for (let y = -1; y <= this.#tile_count; y++) 
+                {
+                    // Если это край карты
+                    if (((y == -1 || y == this.#tile_count) || (x == -1 || x == this.#tile_count))) 
+                    {
+                        // Добавить плитку края карты
+                        this.#tiles.push(this.#CreateBorderTile({ x: this.#tile_size * x, y: this.#tile_size * y }));
+                        continue;
+                    }
+
+                    // Добавить основную плитку
+                    this.#tiles.push(this.#CreateTile({ x: this.#tile_size * x, y: this.#tile_size * y }));
+                }
+            }
+        };
+
+        /** Сгенерировать коллекцию еды */
+        AddOneFoodPoint (new_food_point)
+        {
+            // Добавить новый объект еды в коллекцию
+            this.#food_points.set(new_food_point.id, this.#NewFoodPoint(new_food_point));
+        };
+
+        /** Сгенерировать коллекцию еды */
+        GenerateFoodPoints (new_food_points)
+        {
+            new_food_points = new Map(JSON.parse(new_food_points));
+
+            /* Процедура создания элементов еды */
+            new_food_points.forEach ((value, key) =>
+            {
+                // Добавить новый объект еды в коллекцию
+                this.#food_points.set(key, this.#NewFoodPoint(value));
+            });
+        };
+
+        /** Создать карту */
+        CreateMap (params)
+        {
+            // Очистить карту
+            this.Clear();
+
+            // Обновить значения карты
+            this.#map_size     = params.map_size;
+            this.#map_min_edge = params.map_min_edge;
+            this.#tile_size    = params.tile_size;
+            this.#tile_count   = params.tile_count;
+
+            // Сгенерировать плитки
+            this.#GenerateTiles();
+
+            // Сгенерировать еду
+            this.GenerateFoodPoints(params.food_points);
+        };
+
+        /** Отрисовать плитки карты */
+        DrawTiles ()
+        {
+            this.#tiles.forEach((tile) =>
+            {
+                if (tile.isInCamera())
+                    tile.draw(); 
+            });
+        };
+        
+        /** Находится ли игрок в пределах карты */
+        CheckMapMapBorder (player)
+        {
+            let center = player.getPositionC();
+
+            return (center.x >= -this.#map_min_edge 
+                && center.x <= this.#map_size + this.#map_min_edge 
+                && center.y >= -this.#map_min_edge 
+                && center.y <= this.#map_size + this.#map_min_edge)
+                || (player.pos.x >= -this.#map_min_edge 
+                && player.pos.x <= this.#map_size + this.#map_min_edge 
+                && player.pos.y >= -this.#map_min_edge 
+                && player.pos.y <= this.#map_size + this.#map_min_edge);
+        };
+
+        /** Добавить игровой объект в массив для отрисовки на сцене */
+        AddGameObjectToRender (game_obj)
+        {
+            this.#game_objects_for_rendering.push(game_obj);
+        };
+
+        /** Очистить массив игровых объектов для отрисовки */
+        ClearGameObjectsForRendering ()
+        {
+            this.#game_objects_for_rendering = [];
+        };
+
+        /** Отрисовать игровые объекты, отсортированные по значению радиуса */
+        RenderGameObjects ()
+        {
+            // Отсортировать объекты по значению радиуса
+            this.#game_objects_for_rendering.sort((a, b) => a.radius - b.radius);
+
+            // Отрисовать объекты
+            for (let game_obj of this.#game_objects_for_rendering)
+            {
+                game_obj.draw();
+                // game_obj.drawDynamicBox();
+
+                if (game_obj.alpha < 1)
+                {
+                    game_obj.transparent(0.1);
+                }
+
+                // Отрисовать никнейм, если он создан
+                if (game_obj.HasNickname?.() && game_obj.alive)
+                {
+                    game_obj.GetNickname().draw();
+                }
+            }
+        };
+    };
+
+    /** Класс игрока */
+    class Player extends Game.newCircleObject
+    {
+        #nickname;
+        #nickname_length;
+
+        /** Создать нового игрока */
+        constructor (params)
+        {
+            super({
+                strokeWidth: 5,
+                x: params.x,
+                y: params.y,
+                radius: params.radius,
+                alpha: 0,
+                fillColor: GetRGB(params.color), 
+                strokeColor: GetRGB(params.color, true)
+            });
+
+            this.pos = params.pos;
+            this.distance = 0;
+            this.s_x = params.x;
+            this.s_y = params.y;
+            this.server_id = params.id;
+            this.server_radius = params.radius;
+            this.name = params.name;
+            this.color = params.color;
+            this.speed = params.speed;
+            this.score = params.score;
+            this.alive = params.alive;
+            this.killer = "";
+
+            // Создать объект текста для никнейма, если он введён
+            if (params.name != "Player")
+            {
+                this.#nickname = Game.newTextObject({
+                    align: "center",
+                    size: 18,
+                    alpha: 1,
+                    color: "#fff",
+                    font: "cursive",
+                    strokeWidthText: 0.3,
+                    style: "bold",
+                    text: params.name,
+                    shadowColor : "black", 
+                    shadowBlur : 1, 
+                    shadowX : 0, 
+                    shadowY : 0 
+                });
+
+                this.#nickname_length = this.#nickname.text.length;
+            }
+            else
+            {
+                this.#nickname = params.name;
+            }
+        }
+
+        HasNickname = () =>
+        {
+            return typeof this.#nickname !== "string";
+        }
+
+        GetNickname = () =>
+        {
+            return this.#nickname;
+        }
+
+        /* Обновить координаты X и Y */
+        UpdateXY = () =>
+        {
+            this.x = this.s_x;
+            this.y = this.s_y;
+        };
+
+        /* Размеры игрока достигнули максимального значения */
+        IsRadiusPeaked = () =>
+        {
+            return (this.radius >= GameManager.MaxPlayerRadius);
+        };
+
+        /** Задать радиус игрока */
+        SetRadius = (value) =>
+        {
+            this.server_radius = value;
+        };
+
+        /** Обновить кол-во очков игрока */
+        UpdateScore = (value) =>
+        {
+            this.score = value;
+        };
+
+        /** Обновить радиус игрока */
+        ProcessUpdateRadius = () =>
+        {
+            // Если радиус объекта меньше, чем обновлённый радиус на сервере
+            if (this.radius < this.server_radius)
+            {
+                // Обновляем текущий радиус объекта
+                this.setRadiusC(this.radius + 0.1);
+                return;
+            }
+
+            // Если радиус объекта больше, чем обновлённый радиус на сервере
+            if (this.radius > this.server_radius)
+            {
+                // Обновляем текущий радиус объекта
+                this.setRadiusC(this.server_radius);
+                return;
+            }
+        };
+
+        /** Проверить дистанцию до точки перемещения */
+        CheckDistanceToPos = () =>
+        {
+            // Задать дистанцию до точки перемещения
+            this.distance = this.getDistanceC(this.pos);
+
+            // Вернуть булевое значение, больше ли текущая дистанция
+            // больше чем 40% значене радиуса текущего игрока
+            return this.distance > GetPercentage(40, this.radius);
+        };
+
+        /** Обновить радиус игрока */
+        UpdateSpeed = () =>
+        {
+            // Получить новую скорость, 
+            // поделив дистанцию до точки перемещения на радиус
+            let new_speed = this.distance / this.radius;
+
+            // Задать новую максимальную скорость
+            let max_speed = 3.5 - (this.radius * 0.0050);
+
+            // Если скорость больше максимальной допустимой, задать максимальную скорость
+            // иначе, задать новую скорость
+            this.speed = (new_speed > max_speed) ? max_speed : new_speed;
+        };
+
+        /** Обновить состояние никнейма */
+        UpdateNickname = () =>
+        {
+            // Не обновлять нийнейм, если он отсутствует
+            if (!this.#nickname_length)
+            {
+                return;
+            }
+
+            // Изменить размер никнейма
+            // (радиус делённый на треть от числа кол-ва символов)
+            this.#nickname.setSize(this.radius / (this.#nickname_length / 3));
+
+            // Переместить объект никнейма (текст)
+            // в центр объекта игрока
+            this.#nickname.setPositionC(VectorPoint(this.x + this.radius + 4.5, this.y + this.radius + 5));
+        };
+
+        /** Перемещать игрока */
+        Move = () =>
+        {
+            // Двигать игрока в центральную точку новой позиции
+            this.moveToC(this.pos, this.speed, this.speed);
+        };
+
+        /** Обновить точку для перемещения */
+        UpdatePos = (params) =>
+        {
+            this.pos = params.pos;
+            this.s_x = params.x;
+            this.s_y = params.y;
+        };
+    };
+
+    /** Класс локального игрока */
+    class LocalPlayer extends Player
+    {
+        /** Создать нового локального игрока */
+        constructor (params)
+        {
+            super(params);
+
+            this.is_local = true;
+        }
+
+        /** @override */
+        CheckDistanceToPos = (new_pos) =>
+        {
+            // Получить дистанцию до новой точки перемещения
+            this.distance = this.getDistanceC(new_pos);
+
+            // Обновить координаты точки для перемещения
+            this.pos = new_pos;
+
+            // Вернуть булевое значение, больше ли текущая дистанция
+            // больше чем 50% значения радиуса текущего игрока
+            return this.distance > (this.radius / 2);
+        };
+    };
+
+    /** Игровой помощник */
+    const GameManager = new class
+    {
+        /** Объект локального игрока */
+        #local_player;
+        /** Айди локального игрока */
+        #local_server_id;
+        /** Коллекция вражеских игроков */
+        #enemies = new Map();
+        /** Значение приближения камеры */
+        #zoom_value = 0;
+        /** Кратность увеличения радиуса игрока */
+        #player_scale_value;
+        /** Минимальный размер игрока */
+        #min_player_radius;
+        /** Максимальный размер игрока */
+        #max_player_radius;
+        /** Счётчик FPS */
+        #fps_counter = $("#fps");
+
+        /** Управление таблицей рейтинга */
+        #leaderboard = new class Leaderboard
+        {
+            /** Список <ol> */
+            #table = $("#l_players");
+
+            /** Ссылка на коллекцию игроков в GameManager объекте 
+             * @type {Map<string, Player>} 
+            */
+            #players;
+            /** Ссылка на локального игрока в GameManager объекте 
+             * @type {Player} 
+            */
+            #local_player;
+
+            /** Массив игроков для работы с таблицей
+             *  @type {Array.<Player>} 
+            */
+            #players_sorted;
+
+            /** Инициализирует эдинственный экземпляр объекта
+             * @param {Player} local_player
+             * @param {Map<string, Player>} players
+            */
+            constructor (local_player, players)
+            {
+                this.#local_player = local_player;
+                console.log(this.#local_player);
+                this.#players = players;
+            };
+
+            /** Получить элемент списка по индексу
+             * @param {number} index
+            */
+            #GetByIndex (index)
+            {
+                return this.#table[index];
+            };
+
+            /** Очистить список */
+            #Clear ()
+            {
+                // Очистить все элементы <li>
+                this.#table.children().remove();
+            };
+
+            /** Добавить элемент <li> в список
+             * @param {Player} player
+            */
+            #Append (player)
+            {
+                this.#table.append(`<li>${(player.HasNickname()) ? player.GetNickname().text : player.GetNickname()}</li>`);
+            };
+
+            /** Отсортировать игроков по значение score */
+            #GetSortedArray ()
+            {
+                this.#Clear();
+
+                // Преобразовать в массив коллекцию игроков,
+                // выбрать первых 10 игроков,
+                // и отсортировать их по очкам
+                this.#players_sorted = Array.from(this.#players.values()).slice(0, 9).sort((a, b) => a.score - b.score).reverse();
+
+                this.#players.forEach((player, index) =>
+                {
+                    this.#Append(player);
+                });
+            };
+
+            /** Получить индекс элемента для вставки в список 
+             * @param {Array} players Список игроков
+             * @param {number} player_score Очки игрока
+            */
+            #GetInsertIndex (players, player_score)
+            {
+                return players.findIndex(p => p.score >= player_score);
+            };
+
+            /** Добавить в список игрока
+             * @param {Player} player
+            */
+            #TryAddPlayer (player)
+            {
+                // let insert_index = this.#GetInsertIndex(player.score);
+                if (this.#table.children().length > 9 && this.#GetInsertIndex(player.score) >= 9)
+                {
+                    return;
+                }
+
+                this.#Append(player);
+            };
+
+            /** Обновить список игроков
+             * @param {Array.<Player>} players
+            */
+            Update ()
+            {
+                return;
+                let insert_index = this.#GetInsertIndex(player.score);
+                if (this.#table.children().length <= 9)
+                {
+                    this.#table.append(`<li>${(player.HasNickname()) ? player.GetNickname().text : player.GetNickname()}</li>`);
+                    return;
+                }
+            };
+        }(this.Local, this.#enemies);
+
+        get Local ()
+        {
+            return this.#local_player;
+        };
+
+        constructor ()
+        {
+            // Запустить вывод дебаг информации
+            this.#fps_counter.Updater = setInterval(() => this.#UpdateFPS(), 1000);
+        }
+
+        /** Вовзвращает эдинственный экземпляр объекта для управления таблицей рейтинга
+         *  @type {Leaderboard} 
+        */
+        get Leaderboard ()
+        {
+            return this.#leaderboard;
+        };
+
+        /** Когда нужно обновить данные игрока */
+        OnUpdatePlayerData (data)
+        {
+            let player = this.GetPlayer(data.id);
+
+            // Если игрок не найден
+            if (!player)
+            {
+                return;
+            }
+            
+            // Обновить радиус
+            player.SetRadius(data.radius);
+            // Обновить кол-во очков
+            player.UpdateScore(data.score);
+
+            if (this.IsLocalPlayer(data.id))
+            {
+                Menu.UpdateScore(data.score);
+            }
+        };
+
+        /** Когда игрок отключился */
+        OnPlayerDisconnected (res)
+        {
+            this.RemovePlayer(res.id);
+            Server.UpdateOnline(res.online);
+        };
+
+        /** Сравнить айди с айди локального игрока */
+        IsLocalPlayer (id)
+        {
+            return (this.#local_server_id == id);
+        };
+
+        /** Получить объект локального игрока */
+        get LocalPlayer ()
+        {
+            return this.#local_player;
+        };
+
+        /** Проверить, жив ли локальный игрок */
+        get LocalPlayerIsAlive ()
+        {
+            return (Object.keys(this.#local_player).length !== 0);
+        };
+
+        /** Получить кратность увеличения радиуса игрока */
+        get PlayerScaleMultiply ()
+        {
+            return this.#player_scale_value;
+        };
+
+        /** Минимальный размера игрока */
+        get MinPlayerRadius ()
+        {
+            return this.#min_player_radius;
+        };
+
+        /** Лимит размера игрока */
+        get MaxPlayerRadius ()
+        {
+            return this.#max_player_radius;
+        };
+
+        /** Получить итерацию объектов вражеских игроков */
+        get Enemies ()
+        {
+            return this.#enemies.values();
+        };
+
+        /** Получить объект врага */
+        GetPlayer (player_id)
+        {
+            // Если это локальный игрок - вернуть локального игрока
+            // иначе, вернуть вражеского игрока
+            return this.IsLocalPlayer(player_id) ? this.#local_player : this.#enemies.get(player_id);
+        };
+
+        /** Заспавить всех врагов */
+        AddAllEnemies (enemies)
+        {
+            // Преобразовать данные с новыми игроками в коллекцию
+            let new_enemies = new Map(JSON.parse(enemies));
+
+            // Инициализировать других игроков
+            new_enemies.forEach((enemy) =>
+            {
+                this.AddEnemy(enemy);
+            });
+        };
+
+        /** Заспавить вражеского игрока */
+        AddEnemy (new_player)
+        {
+            this.#enemies.set(new_player.id, new Player(new_player));
+        };
+
+        /** Удалить игрока */
+        RemovePlayer (id)
+        {
+            // Если это локальный игрок
+            if (this.IsLocalPlayer(id))
+            {
+                // Очистить локального игрока
+                this.#local_player = {}; 
+                return;
+            }
+
+            // Удалить вражеского игрока
+            this.#enemies.delete(id);
+        };
+
+        /** Очистить id локального игрока */
+        ClearServerID ()
+        {
+            this.#local_server_id = undefined;
+        };
+
+        /** Очистить всё */
+        Clear ()
+        {
+            // Очистить локального игрока
+            this.RemovePlayer(this.#local_server_id);
+            // Очистить список врагов
+            this.#enemies.clear();
+        };
+
+        /** Инициализировать карту и врагов при подключении к серверу */
+        OnMapInit (res)
+        {
+            // Очистить карту
+            this.Clear();
+
+            this.#local_server_id = res.local_id;
+            this.#player_scale_value = res.server_settings.player_scale_value;
+            this.#min_player_radius = res.server_settings.min_player_radius;
+            this.#max_player_radius = res.server_settings.max_player_radius;
+
+            // Запуск игрового цикла
+            Game.setLoop("game");
+            Game.start();
+
+            // Активация игровых служб
+            System.initFPSCheck();
+            System.initFullPage();
+
+            // Создание карты
+            MapManager.CreateMap(res.map);
+
+            let map_size = MapManager.MapSize / 2;
+            Camera.setPositionC(VectorPoint(map_size, map_size));
+
+            this.AddAllEnemies(res.enemies);
+
+            this.#leaderboard.Update();
+
+            Menu.Show(false);
+        };
+
+        /** Заспавнить локального игрока */
+        OnServerSpawned (params)
+        {
+            // Инициализация локального игрока
+            this.#local_player = new LocalPlayer(params);
+
+            this.#leaderboard.Update();
+
+            // Переместить камеру на локального игрока
+            Camera.scaleC(VectorPoint(1.5, 1.5));
+            Camera.setPositionC(this.#local_player.getPositionC());
+
+            // Скрыть меню
+            Menu.Hide();
+        };
+
+        /** Заспавнить нового игрока */
+        OnNewPlayer (new_player)
+        {
+            // Если сервер заспавнил нового игрока
+            // и новый игрок, это локальный игрок
+            if (this.IsLocalPlayer(new_player.id))
+            {
+                // Запустить спавн локального игрока
+                this.OnServerSpawned(new_player);
+                return;
+            }
+
+            // Добавить врага в список игроков
+            this.AddEnemy(new_player);
+            // Добавить вражеского игрока в таблицу рейтинга
+            this.#leaderboard.Update(this.GetPlayer(new_player.id));
+        };
+
+        /** Когда нужно обновить позицию врага */
+        OnUpdateEnemyPos (player)
+        {
+            this.GetPlayer(player.id)?.UpdatePos(player);
+        };
+
+        /** Когда игрок скушал еду */
+        OnPlayerAteFood (data)
+        {
+            // Удалить объект еды
+            MapManager.RemoveOneFoodPoint(data.food_point_id);
+            // Обновить данные игрока
+            this.OnUpdatePlayerData(data.player);
+
+            // let value = 0.9995;
+            // this.#zoom_value += value;
+            // Camera.scaleC(VectorPoint(value, value));
+        };
+
+        /** Когда игрок скушал врага */
+        OnPlayerAteEnemy (data)
+        {
+            // Обновить данные игрока
+            this.OnUpdatePlayerData(data.killer);
+            // Запустить процесс всасывания врага
+            this.ProcessOfKillingPlayer(data.killer.id, data.enemy);
+        };
+
+        /** Обновить счётчик FPS */
+        #UpdateFPS ()
+        {
+            this.#fps_counter.html(`FPS: ${System.getFPS()}. ${Server.Ping} sec.`);
+        };
+
+        /** Обновить приближение камеры */
+        UpdateZoom ()
+        {
+            // Если была прокрутка колеса мыши вверх
+            if (MouseControl.isWheel("UP") && this.#zoom_value < 4)
+            {
+                this.#zoom_value += 1;
+                Camera.scaleC(VectorPoint(1.2, 1.2)); 
+            }
+            // Если была прокрутка колеса мыши вниз
+            else if (MouseControl.isWheel("DOWN") && this.#zoom_value > -4) 
+            {
+                this.#zoom_value -= 1;
+                Camera.scaleC(VectorPoint(0.8334, 0.8334)); 
+            }
+        };
+
+        /** Преждевременное обновление данных за поедаение еды */
+        LocalPlayerAteFood ()
+        {
+            this.OnUpdatePlayerData(
+            { 
+                id: this.#local_server_id,
+                radius: this.#local_player.radius + this.#player_scale_value,
+                score: this.#local_player.score++
+            });
+        };
+
+        /** Преждевременное обновление данных за поедаение врага */
+        LocalPlayerAteEnemy (enemy)
+        {
+            this.OnUpdatePlayerData(
+            { 
+                id: this.#local_server_id,
+                radius: this.#local_player.radius + (this.#min_player_radius / 8) + (enemy.radius - this.#min_player_radius),
+                score: (this.#local_player.score + enemy.score)
+            });
+        };
+
+        /** Проверить пересечение еды с локальным игроком */
+        CheckFoodPointIntersect ()
+        {
+            // Получить всю еду
+            let food_points = MapManager.FoodPoints;
+
+            // Перебор еды
+            for (let food of food_points)
+            {
+                // Если текущая еда в поле зрения камеры
+                if (food.isInCamera())
+                {
+                    // Если локальный игрок жив,
+                    // радиус не достиг максимума,
+                    // и пересекается с бъектом еды
+                    if (this.LocalPlayerIsAlive
+                        && !this.#local_player.IsRadiusPeaked() 
+                        && this.#local_player.isStaticIntersect(food)
+                        && this.#local_player.getDistanceC(food.getPositionC()) <= this.#local_player.radius)
+                    {
+                        // Удалить объект еды
+                        MapManager.RemoveOneFoodPoint(food.server_id);
+
+                        // Отправить на сервер сообщение об удалении текущей еды
+                        // и увеличению радиуса локального игрока
+                        Server.RPC_AteFood(food.server_id);
+
+                        // Обновить радиус локального игрока
+                        this.LocalPlayerAteFood();
+
+                        // Перейти к следующему циклу
+                        continue;
+                    }
+
+                    // Добавить объект в массив для отрисовки
+                    MapManager.AddGameObjectToRender(food);
+                }
+            }
+        };
+
+        /** Запуск процесса убийства игрока */
+        ProcessOfKillingPlayer (killer_id, enemy_id)
+        {   
+            /** Объект киллера */
+            let killer = this.GetPlayer(killer_id);    
+            /** Объект жертвы */
+            let enemy  = this.GetPlayer(enemy_id);
+
+            // Если игроки находятся в поле зрения камеры
+            if (killer.isInCamera() && enemy.isInCamera())
+            {
+                /** Является ли жертва локальным игроком */
+                let enemy_is_local = this.IsLocalPlayer(enemy_id);
+
+                // Двигать врага к центру локлаьного игрока (типо анимация)
+                enemy.moveToC(killer.getPositionC(), 7, 7);
+
+                // Если жертва ещё жива
+                if (enemy.alive)
+                {
+                    // Изменить показатель жизни
+                    enemy.alive = false;
+                    // Привязать к жертве айди его убийцы
+                    enemy.killer = killer.server_id;
+                    // Возпроизвести звук смерти
+                    AudioManager.PlayDie();
+                    
+                    // Если жертва - это локальный игрок
+                    if (enemy_is_local)
+                    {
+                        // Отобразить меню
+                        Menu.Show();
+                    }
+                }
+
+                // Когда игрок "всосался"
+                if (killer.getDistanceC(enemy.getPositionC()) <= 10)
+                {
+                    // Если жертва - это локальный игрок
+                    if (enemy_is_local)
+                    {
+                        // Очистить объект локального игрока
+                        this.RemovePlayer(this.#local_server_id);
+                        return;
+                    };
+
+                    // Удалить вражеского игрока из массива
+                    this.RemovePlayer(enemy.server_id);
+                }
+
+                return;
+            }
+
+            // Если игрок вне поля зрения камеры
+            // сразу удалить вражеского игрока из массива
+            this.RemovePlayer(enemy.server_id);
+        };
+
+        /** Обновить данные локального игрока */
+        UpdateLocalPlayer ()
+        {
+            // Если игрок не был заспавнен
+            if (!this.LocalPlayerIsAlive)
+                return;
+
+            /** Ссылка на объект локального игрока */
+            let l_p = this.#local_player;
+
+            // Если у игрока обнаружен убийца
+            if (l_p.killer)
+            {
+                // Запустить процесс смерти
+                this.ProcessOfKillingPlayer(l_p.killer, l_p.server_id);
+                
+                // Если объект локального игрока не пустой
+                if (this.LocalPlayerIsAlive)
+                {
+                    // Добавить объект в массив для отрисовки
+                    MapManager.AddGameObjectToRender(l_p);
+                }
+
+                return;
+            }
+
+            let new_pos = MousePosition();
+
+            // Плавное увеличение радиуса, если это нужно
+            l_p.ProcessUpdateRadius();
+
+            // Обновить позицию локального игрока
+            // если дистанция до новой точки больше дозволенного
+            if (l_p.CheckDistanceToPos(new_pos)) 
+            {
+                // Обновить скорость перемещения
+                l_p.UpdateSpeed(new_pos);
+
+                // Если игрок в пределах карты
+                if (MapManager.CheckMapMapBorder(l_p)) 
+                {
+                    // Отправить серверу данные о смене позиции
+                    Server.RPC_UpdatePOS(
+                    { 
+                        pos: l_p.pos,
+                        x: l_p.x,
+                        y: l_p.y,
+                    });
+
+                    // Двигать игрока в центральную точку новой позиции
+                    l_p.Move();
+                }
+
+                // Обновить никнейм
+                l_p.UpdateNickname();
+            }
+
+            // Добавить объект в массив для отрисовки
+            MapManager.AddGameObjectToRender(l_p);
+
+            // Обновить позицию камеры
+            Camera.follow(l_p, l_p.speed + 1);
+        };
+
+        /** Проверить пересечение с вражеским игроком, у которого значение радиуса больше */
+        CheckEnemyIntersect (enemy)
+        {
+            if ((this.#local_player.radius > enemy.radius + 3) 
+                && this.#local_player.isStaticIntersect(enemy)
+                && this.#local_player.getDistanceC(enemy.getPositionC()) <= this.#local_player.radius)
+            {
+                // Сообщить о поедании вражеского игрока
+                if (enemy.alive)
+                {
+                    Server.RPC_AteEnemy(enemy.server_id);
+                }
+
+                // Локальный игрок скушал врага
+                this.LocalPlayerAteEnemy(enemy);
+                
+                // Запустить процесс убийства игрока
+                this.ProcessOfKillingPlayer(this.#local_server_id, enemy.server_id);
+                
+                return true;
+            }
+
+            return false;
+        };
+
+        /** Обновить данные врагов */
+        UpdateEnemies ()
+        {
+            // Перебор всех вражеских игроков
+            for (let enemy of this.Enemies)
+            {
+                // Задать координаты X и Y, если они повреждены
+                if (isNaN(enemy.x) || isNaN(enemy.y))
+                {
+                    enemy.UpdateXY();
+                }
+
+                // Если игрок в поле зрения камеры
+                if (enemy.isInCamera()) 
+                {
+                    // Если у игрока обнаружен убийца
+                    if (enemy.killer)
+                    {
+                        // Запустить процесс смерти
+                        this.ProcessOfKillingPlayer(enemy.killer, enemy.server_id);
+
+                        // Отрисовывать врага
+                        MapManager.AddGameObjectToRender(enemy);
+                        
+                        // Перейти к следующему врагу
+                        continue;
+                    }
+
+                    // Проверитить, может ли локальный игрок скушать врага
+                    if (this.LocalPlayerIsAlive && this.CheckEnemyIntersect(enemy))
+                    {
+                        // Отрисовывать врага
+                        MapManager.AddGameObjectToRender(enemy);
+                        
+                        // Перейти к следующему врагу
+                        continue;
+                    }
+
+                    // Плавное увеличение радиуса, если это нужно
+                    enemy.ProcessUpdateRadius();
+
+                    // Обновить позицию вражеского игрока
+                    // если дистанция до новой точки больше дозволенного
+                    if (enemy.CheckDistanceToPos()) 
+                    {
+                        // Обновить скорость перемещения
+                        enemy.UpdateSpeed();
+
+                        // Если игрок в пределах карты
+                        if (MapManager.CheckMapMapBorder(enemy)) 
+                        {
+                            // Двигать игрока в центральную точку новой позиции
+                            enemy.Move();
+                        }
+                    } 
+
+                    // Обновить никнейм
+                    enemy.UpdateNickname();
+
+                    // Добавить объект в массив для отрисовки
+                    MapManager.AddGameObjectToRender(enemy);
+
+                    // Перейти к следующей итерации цикла
+                    continue;
+                }
+
+                // Если игрок вне поля зрения камеры
+                // не двигать объект, а сразу переместить по нужным координатам
+                enemy.UpdateXY();
+            }
+        };
+    };
+
+    /* Запустить игровой цикл */
+    Game.newLoop("game", function() 
+    {
+        /* Не обновлять игровую сцену, если отсутствует подключение к серверу */
+        if (!Server.ConnectionState)
+        {
+            return;
+        }
+
+        /* Обновление зума камеры */
+        GameManager.UpdateZoom();
+
+        /* Отрисовка карты */
+        MapManager.DrawTiles();
+
+        /* Очистка массива объектов для отрисовки */
+        MapManager.ClearGameObjectsForRendering();
+
+        /* Проверить пересечение локального игрока с едой */
+        GameManager.CheckFoodPointIntersect();
+
+        /* Отрисовка других игроков */
+        GameManager.UpdateEnemies();
+
+        /* Отрисовка локального игрока */
+        GameManager.UpdateLocalPlayer();
+
+        /* Отрисовка игровых объектов */
+        MapManager.RenderGameObjects();
+    });
+
+// }); // documentUploaded
+
+// TODO: Реализовать таблицу рейтинга
+// TODO: Реализовать отделение маленькой частички (создание большого объекта еды)
+// TODO: Реализовать деление на несколько частей
+// TODO: Реализовать шип
+// TODO: Реализовать кормление шипа, и его увеличение
