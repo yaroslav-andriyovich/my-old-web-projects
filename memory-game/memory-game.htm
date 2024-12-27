@@ -1,0 +1,194 @@
+﻿<!DOCTYPE html>
+<html>
+    <head>
+        <title>Memory Game</title>
+        <style>
+        tr {
+           background: silver; 
+        }
+        
+        td {
+           height: 70px;
+           width: 70px; 
+        } td:hover {
+           background: rgb(90, 90, 90); 
+        }
+        </style>
+    </head>
+    <body>
+    
+    <table style="background: #000000" align="center">
+    
+    <tr>
+    <td id="0" onClick="Click(0)"></td>
+    <td id="1" onClick="Click(1)"></td>
+    <td id="2" onClick="Click(2)"></td>
+    <td id="3" onClick="Click(3)"></td>
+    </tr>
+    
+    <tr>
+    <td id="4" onClick="Click(4)"></td>
+    <td id="5" onClick="Click(5)"></td>
+    <td id="6" onClick="Click(6)"></td>
+    <td id="7" onClick="Click(7)"></td>
+    </tr>
+    
+    <tr>
+    <td id="8" onClick="Click(8)"></td>
+    <td id="9" onClick="Click(9)"></td>
+    <td id="10" onClick="Click(10)"></td>
+    <td id="11" onClick="Click(11)"></td>
+    </tr>
+
+    <tr>
+    <td id="12" onClick="Click(12)"></td>
+    <td id="13" onClick="Click(13)"></td>
+    <td id="14" onClick="Click(14)"></td>
+    <td id="15" onClick="Click(15)"></td>
+    </tr>
+    
+    </table> <br />
+
+    <input type="button" onClick="Update()" value="Reload" style="display: block; margin-left: auto; margin-right: auto; background: silver; color: black;">
+    
+    <div id="divStatus" align="center"></div>
+    <br />
+    <br />
+    <div id="divStats" align="center"></div>
+    
+        <script>
+        
+        var objects = [], selected = [], selectCount = 0, guessCubeCount = 0; // Лист объектов(квадратов), лист выбранных объектов, счетчики выбранных и угаданных объектов
+
+        var colors = ["Red", "DeepPink", "Orange", "Yellow", "Lime", "Blue", "Black", "DarkSlateGrey"]; // 8 рандомных цветов для объектов
+
+        var divStats = document.getElementById("divStats"); // Блок статистики
+
+        var divStatus = document.getElementById("divStatus"); // Блок статуса (Угадал/Не угадал)
+
+        var user = prompt("Your name: ", undefined);
+
+        var counts = 0, time, time2;
+
+        if (user == "" || user == " " || user == undefined) user = "Unknown";
+        
+        function compareRandom(a, b) {
+            return Math.random() - 0.5;
+        } // Функция которая помогает перемешивать массив цветов
+
+        function Kwadratik(id, color, guess) {
+            this.id = id;
+            this.color = color;
+            this.guess = guess;
+        } // Исходный код объектов
+
+        function Update() {
+            colors.sort(compareRandom);
+            for (var i = 0; i <= 7; i++) {
+                objects[i] = new Kwadratik(i, colors[i], false);
+            }
+            colors.sort(compareRandom);
+            var i2 = 0;
+            for (var i = 8; i <= 15; i++) {
+                objects[i] = new Kwadratik(i, colors[i2], false);
+                i2++;
+            }
+            for (var i = 0; i < objects.length; i++) {
+                document.getElementById(i).style.background = "silver";
+            }
+            divStatus.style.color = "Green";
+            divStatus.innerHTML = "The game is loaded.";
+        } Update(); // Загрузка всех объектов, цветов, статистики
+        
+        function Click(a) {
+
+            counts++;
+            selectCount++;
+            selected.push(a);
+
+            if (objects[selected[0]].guess == true) {
+                counts--;
+                selectCount--;
+                selected.splice(0, 1);
+                return;
+            }
+
+            document.getElementById(String(a)).style.background = objects[a].color;
+
+            if (selectCount == 2) {
+                if (objects[selected[0]].id == objects[selected[1]].id) {
+                counts--;
+                selectCount--;
+                selected.splice(1, 1);
+                return;
+            }
+
+            if (objects[selected[1]].guess == true) {
+                counts--;
+                selectCount--;
+                selected.splice(1, 1);
+                return;
+            }
+
+                selectCount = 0;
+
+                if (objects[selected[0]].color == objects[selected[1]].color) {
+                    guessCubeCount++;
+
+                   objects[selected[0]].guess = true;
+                   objects[selected[1]].guess = true;
+
+                    divStatus.style.color = "Green";
+                    divStatus.innerHTML = "You guessed it.";
+                    
+                    if(guessCubeCount == colors.length) {
+
+                        alert("Game over.");
+
+                        divStatus.style.color = "Green";
+                        divStatus.innerHTML = "Game over.";
+
+                        guessCubeCount = 0;
+
+                        time = (new Date() - time2) / 1000;
+
+                        divStats.style.color = "Maroon";
+                        divStats.innerHTML = "Player: " + user + "<br/>"
+                                           + "Number of moves: " + counts + "<br/>"
+                                           + "Time: " + time + " sec.";
+
+                        counts = 0;
+                        guessCubeCount = 0;
+                        time = null; time2 = null;
+
+            }
+                } else {
+                    divStatus.style.color = "Red";
+                    divStatus.innerHTML = "You're wrong.";
+
+                    if (objects[selected[0]].guess == true) return;
+                    if (objects[selected[1]].guess == true) return;
+
+                    var s0 = selected[0];
+                    var s1 = selected[1];
+                    function Clean() {
+                        setTimeout(function() {
+                    document.getElementById(s0).style.background = "silver";
+                    document.getElementById(s1).style.background = "silver"}, 500);
+                    } Clean();
+                }
+
+                selected = [];
+            }
+
+            if (counts == 1) {
+                time2 = new Date();
+            }
+
+        } // Обработчиков кликов
+
+        console.log("Powered by Yaroslav Andriyovich © 2018" + "\n\n" + "12.09.2018");
+           
+        </script>
+    </body>
+</html>

@@ -1,4 +1,4 @@
-# Agar.io clone (client-server)
+# Agar.io clone (client-server) (2022)
 
 An attempt to create a clone of the browser-based online game [Agar.io](https://agar.io/) using [TypeScript](https://www.typescriptlang.org/), [Socket.io](https://socket.io/) and [PointJS](https://pointjs.ru/).
 

@@ -1,4 +1,4 @@
-# Web RPG (client-server)
+# Web RPG (client-server) (2021)
 
 An attempt to create a browser-based online RPG using [JavaScript](https://developer.mozilla.org/ru/docs/Web/JavaScript), [Socket.io](https://socket.io/) and [PointJS](https://pointjs.ru/).
 
@@ -21,4 +21,6 @@ An attempt to create a browser-based online RPG using [JavaScript](https://devel
 
 The [server.js](./server.js) file is needed to start the server.
 
-To open a web page, the [index.html](./index.html) file is used.[README.md](..%2FREADME.md)
+Client file: [script.js](./scripts/script.js)
+
+To open a web page, the [index.html](./index.html) file is used.
