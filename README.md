@@ -27,3 +27,12 @@
     <br/>
     <img width="60%" src="./memory-game/memory-game-demo.gif">
 </p>
+
+- ### Websites (2015-2018)
+
+Since 7th grade in school, I started learning website development using HTML/CSS/JS, and after a bit of PHP + SQL. During this time I created several simple business card sites, one of which I still maintain.
+
+<p>
+    <br/>
+    <img width="100%" src="./readme-resources/websites.jpg">
+</p>
