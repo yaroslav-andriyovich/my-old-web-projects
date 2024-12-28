@@ -15,7 +15,7 @@
 - ### [WebDuel (client-server)](https://github.com/yaroslav-andriyovich/WebDuel) (2020)
 
 <p>
-    <img width="60%" src="https://camo.githubusercontent.com/849b07900ca8fdb9102893cef26782b2e42cb83a8a5ab678bfb7218c8470a0cf/68747470733a2f2f692e696d6775722e636f6d2f4355637a3144692e706e67">
+    <img width="60%" src="./readme-resources/webduel-demo.gif">
 </p>
 
 - ### [Automatiozation](./automatization/) (scripts/bots) (2018-2020)
