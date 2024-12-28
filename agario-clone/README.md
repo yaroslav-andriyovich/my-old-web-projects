@@ -16,8 +16,7 @@ An attempt to create a clone of the browser-based online game [Agar.io](https://
 - separating food from the player and devouring it;
 - custom data types for interaction with the server and data spoofing elimination.
 
-<p align="left">
-    <br/>
+<p>
     <img width="70%" src="./readme-resources/agario-clone-demo.gif">
 </p>
 

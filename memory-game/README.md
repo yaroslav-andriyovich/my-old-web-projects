@@ -2,7 +2,6 @@
 
 The game was written on my phone in one college pairing :D
 
-<p align="left">
-    <br/>
+<p>
     <img width="70%" src="./memory-game-demo.gif">
 </p>

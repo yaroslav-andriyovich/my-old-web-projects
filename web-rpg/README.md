@@ -12,8 +12,7 @@ An attempt to create a browser-based online RPG using [JavaScript](https://devel
 - player health;
 - one game class with archery and damage dealing capabilities.
 
-<p align="left">
-    <br/>
+<p>
     <img width="70%" src="./readme-resources/web-rpg-demo.gif">
 </p>
 
